@@ -1,0 +1,1562 @@
+/**
+ * Version 1.8.59
+ */
+
+var apiHostName = "https://api.ampry.com"
+var staticUrl = "https://d3tkwemdsk3acd.cloudfront.net"
+
+var idleUser = false;
+var scrolledPastHalf = false;
+var widgetlyNotLoopCount = 0;
+var widgetlyTBScroll = false;
+var lastScrollTop = 0;
+var wMEIST = true;
+var widgetlyOnPageDiv = 0;
+var GetAdHttp;
+var randomAdHTTP;
+
+var bodyMargin = false;
+var spaceTimeout;
+
+var widgetly = {
+    initilized: false,
+};
+
+var notificationIframe;
+var notificationAnimationName;
+
+var popClickTrack = 0;
+var popClickTarget = 0;
+var popIframe, popFrequency, popFrequencyDays, popFrequencyTimes, pop_delay_active = true;
+var popClose_for_session;
+var tbBarWidget;
+var popBackUnloaded = false;
+var popUpSrc;
+var scrollTriggers = [];
+var placementsCache = {};
+var placementsCloseSession = {};
+var platformCache = {};
+var onPageFilterPassed = false;
+
+widgetly.init = function () {
+    checkConversions();
+    addWidgetlyCss(document);
+    addAnimationCss(document);
+    widgetly.initilized = true;
+};
+widgetly.destroyWidgets = function () {
+    clearWidgetlyIframes();
+    if (GetAdHttp && GetAdHttp.readyState != 4) GetAdHttp.abort();
+};
+widgetly.getWidgets = function () {
+    if (GetAdHttp && GetAdHttp.readyState != 4) GetAdHttp.abort();
+    clearWidgetlyIframes();
+    adjustIds();
+    data = {};
+    params = window.location.search.substring(1);
+    data = parse_url_params(params);
+    if (typeof ampry_acc_code !== "undefined") {
+        data["acc"] = ampry_acc_code;
+    } else {
+        data["acc"] = getPixelParams("acc");
+    }
+    data["subID"] = getPixelParams("subid");
+    data["domain_name"] = window.location.hostname;
+    data["referrer_front"] = window.location.href;
+    data["referrer_back"] = document.referrer;
+    onpage_specific = [];
+    data["onpage_widgets"] = [];
+    data["onpage_adgroups"] = [];
+
+    var visited_urls = [];
+    if (sessionStorage.getItem("visited_urls")) {
+        visited_urls = JSON.parse(sessionStorage.getItem("visited_urls"));
+    }
+    if (visited_urls.indexOf(window.location.href) == -1)
+        visited_urls.push(window.location.href);
+    sessionStorage.setItem("visited_urls", JSON.stringify(visited_urls));
+
+    data["visited_urls"] = JSON.stringify(visited_urls);
+    data["platform"] = getPlatformType();
+
+    wdigetlySpecOP = document.querySelectorAll("[id^=widgetlyOP-]");
+    wdigetlySpecOP.forEach((el) =>
+        onpage_specific.push(el.id.replace("widgetlyOP-", "").split("-"))
+    );
+    onpage_specific.forEach(function (el) {
+        if (!data["onpage_widgets"].includes(el[0])) {
+            data["onpage_widgets"].push(el[0]);
+        }
+        if (!data["onpage_adgroups"].includes(el[1])) {
+            data["onpage_adgroups"].push(el[1]);
+        }
+    });
+    data["onpage_count"] = document.querySelectorAll(
+        ".widgetlyOnPageSnippet:not([id^=widgetlyOP-])"
+    ).length;
+    if (
+        getCookie("unqU_" + data["domain_name"]) &&
+        !sessionStorage.getItem("unqU_" + data["domain_name"])
+    ) {
+        data["uniqueU"] = false;
+    } else {
+        setCookie("unqU_" + data["domain_name"], true, 180);
+        sessionStorage.setItem("unqU_" + data["domain_name"], "true");
+        data["uniqueU"] = true;
+    }
+    // Get Random Ad details
+    GetAdHttp = new XMLHttpRequest();
+    const genUrl = apiHostName + "/placements/spawn/widget";
+    GetAdHttp.open("POST", genUrl, true);
+    GetAdHttp.setRequestHeader("Content-Type", "application/json");
+    GetAdHttp.withCredentials = true;
+    GetAdHttp.send(JSON.stringify({ data }));
+    GetAdHttp.onload = function () {
+        // start processing resp
+        mainEl = null;
+        agFullResp = JSON.parse(GetAdHttp.response);
+        agFullResp.forEach(function (agResp) {
+            widget = agResp.adWidgetProperties.widget_type;
+
+            if (
+                widget.widget_type_str != "PopUpWidget" &&
+                !canIShow(
+                    agResp.adWidgetProperties.frequency,
+                    agResp.adWidgetProperties.frequency_days,
+                    agResp.adWidgetProperties.frequency_times_days,
+                    "widgetlyIframe-" + agResp.adWidgetProperties.id,
+                    widget.widget_type_str,
+                    agResp.adWidgetProperties.close_for_session
+                )
+            ) {
+                return;
+            }
+
+            placementsCache[
+                "widgetlyIframe-" + agResp.adWidgetProperties.id
+            ] = widget;
+            placementsCloseSession[
+                "widgetlyIframe-" + agResp.adWidgetProperties.id
+            ] = agResp.adWidgetProperties.close_for_session;
+            platformCache["widgetlyIframe-" + agResp.adWidgetProperties.id] =
+                agResp.adGroupPlatform;
+
+            // Get Ad Content
+            platform = getPlatformType();
+            current_url = window.location.hostname;
+            var adContentUrl =
+                apiHostName +
+                "/placements/groups/" +
+                agResp.adGroupId +
+                "/live?platform=" +
+                platform +
+                "&domain=" +
+                window.btoa(window.location.href);
+            if (widget.widget_type_str == "OnPageWidget") {
+                onPageFilterPassed = true;
+                widgetlyOnPageSnippets = document.querySelectorAll(
+                    "[id^=widgetlyOP-" +
+                    agResp.adWidgetProperties.id +
+                    "-" +
+                    agResp.adGroupId +
+                    "]"
+                );
+                if (widgetlyOnPageSnippets.length > 0) {
+                    widgetlyOnPageSnippets.forEach(function (
+                        widgetlyOnPageSnippet
+                    ) {
+                        let adIframe = widgetlyOnPageWidget(
+                            agResp,
+                            adContentUrl
+                        );
+                        adIframe.id =
+                            "widgetlyIframe-" +
+                            Math.floor(Math.random() * 1000) +
+                            "-" +
+                            agResp.adWidgetProperties.id;
+                        adIframe.addEventListener("load", function () {
+                            sendIframeId(adIframe);
+                            setIframeWH(adIframe);
+                            adjustWidgetlyClose(adIframe, null);
+                        });
+                        widgetlyOnPageSnippet.appendChild(adIframe);
+                    });
+                }
+                if (widgetlyOnPageDiv < 1) {
+                    widgetlyOnPageSnippets = document.querySelectorAll(
+                        ".widgetlyOnPageSnippet:not([id^=widgetlyOP-])"
+                    );
+                    if (widgetlyOnPageSnippets.length > 0) {
+                        widgetlyOnPageSnippets.forEach(function (
+                            widgetlyOnPageSnippet
+                        ) {
+                            let adIframe = widgetlyOnPageWidget(
+                                agResp,
+                                adContentUrl
+                            );
+                            adIframe.id =
+                                "widgetlyIframe-" +
+                                Math.floor(Math.random() * 1000) +
+                                "-" +
+                                agResp.adWidgetProperties.id;
+                            adIframe.addEventListener("load", function () {
+                                sendIframeId(adIframe);
+                                setIframeWH(adIframe);
+                                adjustWidgetlyClose(adIframe, null);
+                            });
+                            widgetlyOnPageSnippet.appendChild(
+                                adIframe
+                            );
+                            widgetlyOnPageDiv += 1;
+                        })
+                    }
+                }
+            } else if (widget.widget_type_str == "PopUpWidget") {
+                var adIframe = document.createElement("iframe");
+                adIframe.id = "widgetlyIframe-" + agResp.adWidgetProperties.id;
+                adIframe.classList.add("widgetlyIframe");
+                popFrequency = agResp.adWidgetProperties.frequency;
+                popFrequencyDays = agResp.adWidgetProperties.frequency_days;
+                popClose_for_session = agResp.adWidgetProperties.close_for_session;
+                popFrequencyTimes = agResp.adWidgetProperties.frequency_times_days;
+                popUpSrc = adContentUrl;
+                // adIframe.src = adContentUrl;
+                adIframe.style.display = "none";
+                if (widget.teaser_config) {
+                    ampryTeaser.render(widget.teaser_config);
+                }
+                if (
+                    widget.trigger_type.trigger_type_str == "ExitIntentTrigger"
+                ) {
+                    if ("activate_delay" in widget.advanced_display
+                        && widget.advanced_display.activate_delay) {
+                        pop_delay_active = false;
+                        setTimeout(() => pop_delay_active = true, widget.advanced_display.activate_delay * 1000)
+                    }
+                    // var exitIntent = false;
+                    if (platform == "desktop") {
+                        const direction = "up";
+                        document.getElementsByTagName(
+                            "html"
+                        )[0].onmouseleave = (event) => {
+                            // if (!exitIntent) {
+                            if (event.clientY < 0) {
+                                popupShowOnTrigger();
+                                // exitIntent = true;
+                            }
+                            // }
+                        };
+                    }
+                    if (
+                        widget.trigger_type.enable_mobile_exit_scroll == true &&
+                        platform != "desktop"
+                    ) {
+                        window.addEventListener("scroll", function () {
+                            widgetlyMobileExitIntentScrollTrigger(
+                                widget.trigger_type.scroll_percentage
+                            );
+                        });
+                    }
+                    if (
+                        widget.trigger_type.mobile_back_button == true &&
+                        platform != "desktop"
+                    ) {
+                        window.addEventListener("beforeunload", function (event) {
+                            if (!popBackUnloaded) {
+                                // Cancel the event
+                                e.preventDefault();
+                                // Chrome requires returnValue to be set
+                                e.returnValue = '';
+                                popupShowOnTrigger();
+                                popBackUnloaded = true;
+                            }
+                        });
+                        if (window.history && window.history.pushState) {
+                            window.addEventListener("popstate", function (event) {
+                                if (event.state == "ampry_eit") {
+                                    popupShowOnTrigger();
+                                }
+                                // var hashLocation = location.hash;
+                                // var hashSplit = hashLocation.split("#!/");
+                                // var hashName = hashSplit[1];
+
+                                // if (hashName !== "") {
+                                //     var hash = window.location.hash;
+                                //     if (hash === "") {
+                                //         popupShowOnTrigger();
+                                //     }
+                                // }
+                            });
+                            window.history.pushState("ampry_eit", '');
+                            window.history.pushState("ampry_eit", '');
+                        }
+                    }
+                    if (
+                        widget.trigger_type.mobile_browser_tab_button == true &&
+                        platform != "desktop"
+                    ) {
+                        document.addEventListener(
+                            "visibilitychange",
+                            function () {
+                                popupShowOnTrigger();
+                            }
+                        );
+                    }
+                } else if (
+                    widget.trigger_type.trigger_type_str == "PageScrollTrigger"
+                ) {
+                    window.addEventListener("scroll", function () {
+                        widgetlyPageScrollTrigger(widget, adIframe);
+                    });
+                } else if (
+                    widget.trigger_type.trigger_type_str == "ClicksTrigger"
+                ) {
+                    //click trigger
+                    popClickTarget = widget.trigger_type.click_count;
+                    window.addEventListener("click", popupClickTrigger);
+                } else if (
+                    widget.trigger_type.trigger_type_str ==
+                    "ClicksButtonTrigger"
+                ) {
+                    if (widget.trigger_type.selector_type == "class") {
+                        popbuttons = document.getElementsByClassName(
+                            widget.trigger_type.selector_name
+                        );
+                        for (var i = 0; i < popbuttons.length; i++) {
+                            popbuttons
+                                .item(i)
+                                .addEventListener("click", popupShowOnTrigger);
+                        }
+                    } else {
+                        popbutton = document.getElementById(
+                            widget.trigger_type.selector_name
+                        );
+                        if (popbutton) {
+                            popbutton.addEventListener(
+                                "click",
+                                popupShowOnTrigger
+                            );
+                        }
+                    }
+                } else if (
+                    widget.trigger_type.trigger_type_str == "IdleUserTrigger"
+                ) {
+                    widgetyIdleUserTrigger(widget.trigger_type.show_after_idle);
+                } else if (
+                    widget.trigger_type.trigger_type_str == "TimerTrigger"
+                ) {
+                    // if (
+                    //     !canIShow(
+                    //         agResp.adWidgetProperties.frequency,
+                    //         agResp.adWidgetProperties.frequency_days,
+                    //         agResp.adWidgetProperties.frequency_times_days,
+                    //         "widgetlyIframe-" + agResp.adWidgetProperties.id,
+                    //         widget.widget_type_str
+                    //     )
+                    // ) {
+                    //     return;
+                    // } else {
+                    setTimeout(popupShowOnTrigger, widget.trigger_type.popup_delay * 1000)
+                    // adIframe.src = popUpSrc;
+                    // }
+                }
+                adIframe.classList.add("popUpIframe");
+                adIframe.onload = function () {
+                    adjustWidgetlyClose(this, null);
+                    var widgetHideMobile = false;
+                    var widgetHideDesktop = false;
+                    var agPlatform = platformCache[this.id];
+                    if (agPlatform == "none" || agPlatform == "desktop") {
+                        widgetHideMobile = true;
+                    }
+                    if (agPlatform == "none" || agPlatform == "mobile") {
+                        widgetHideDesktop = true;
+                    }
+                    widgetlyHidePlatform(
+                        this,
+                        widgetHideDesktop,
+                        widgetHideMobile
+                    );
+                };
+                document.body.appendChild(adIframe);
+                popIframe = document.getElementById(adIframe.id);
+
+            } else if (widget.widget_type_str == "TopBottomWidget") {
+                var adIframe = document.createElement("iframe");
+                adIframe.id = "widgetlyIframe-" + agResp.adWidgetProperties.id;
+                adIframe.classList.add("widgetlyIframe");
+                adIframe.src = adContentUrl;
+                adIframe.classList.add("mainIframe");
+
+                tbBarWidget = "widgetlyIframe-" + agResp.adWidgetProperties.id;
+                adIframe.onload = function () {
+                    // push page down true && widgetlyTop
+                    widget = placementsCache[tbBarWidget];
+                    agPlatform = platformCache[this.id];
+                    sendIframeId(
+                        this,
+                        widget.push_page_down &&
+                        widget.display_bar_at == "widgetlyTop"
+                    );
+                    setIframe(this, widget.trigger_type == "showhide");
+                    adjustWidgetlyClose(this, widget.users_can_close_bar);
+                    var widgetHideMobile = false;
+                    var widgetHideDesktop = false;
+                    if (agPlatform == "none" || agPlatform == "desktop") {
+                        widgetHideMobile = true;
+                    }
+                    if (agPlatform == "none" || agPlatform == "mobile") {
+                        widgetHideDesktop = true;
+                    }
+                    widgetlyHidePlatform(
+                        this,
+                        widgetHideDesktop,
+                        widgetHideMobile
+                    );
+                    if (
+                        widget.push_page_down &&
+                        widget.display_bar_at == "widgetlyTop"
+                    ) {
+                        this.contentWindow.postMessage(
+                            { msg: "pushPageTB", iframeID: this.id },
+                            "*"
+                        );
+                        // document.body.style['margin-top'] = adIframe.contentWindow.document.body.scrollHeight+"px";
+                    }
+                };
+                adIframe.classList.add(widget.display_bar_at);
+                if (
+                    widget.stay_at_top &&
+                    widget.display_bar_at == "widgetlyTop"
+                ) {
+                    adIframe.style["position"] = "absolute";
+                }
+
+                if (widget.trigger_type) {
+                    if (widget.trigger_type == "showhide") {
+                        document.body.appendChild(adIframe);
+                        adIframe.style["transition"] = "all 500ms ease";
+                        window.addEventListener("scroll", function () {
+                            adIframe = document.getElementById(tbBarWidget)
+                            if (!adIframe) {
+                                return;
+                            }
+                            widget = placementsCache[tbBarWidget];
+                            var st =
+                                window.pageYOffset ||
+                                document.documentElement.scrollTop;
+                            if (st > lastScrollTop) {
+                                if (widget.display_bar_at == "widgetlyTop") {
+                                    adIframe.style.top =
+                                        "-" + adIframe.style.height;
+                                    setBodyMargin(0);
+                                } else if (
+                                    widget.display_bar_at == "widgetlyBottom"
+                                ) {
+                                    adIframe.style.display = "block";
+                                    adIframe.style.bottom = 0;
+                                }
+                                // downscroll code
+                            } else {
+                                if (widget.display_bar_at == "widgetlyTop") {
+                                    adIframe.style.display = "block";
+                                    adIframe.style.top = 0;
+                                    if (widget.push_page_down)
+                                        setBodyMargin(
+                                            adIframe.offsetHeight - 1
+                                        );
+                                } else if (
+                                    widget.display_bar_at == "widgetlyBottom"
+                                ) {
+                                    adIframe.style.bottom =
+                                        "-" + adIframe.style.height;
+                                }
+                                // upscroll code
+                            }
+                            lastScrollTop = st <= 0 ? 0 : st; // For Mobile or negative scrolling
+                        });
+                    } else if (widget.trigger_type.endsWith("s")) {
+                        delay = parseInt(widget.trigger_type);
+                        delayTimeoutTB = setTimeout(function () {
+                            clearTimeout(delayTimeoutTB);
+                            document.body.appendChild(adIframe);
+                        }, delay * 1000);
+                    } else if (widget.trigger_type.endsWith("p")) {
+                        window.addEventListener("scroll", function () {
+                            if (!widgetlyTBScroll) {
+                                widgetlyTBScrollTrigger(widget, adIframe);
+                            }
+                        });
+                    }
+                }
+            } else if (widget.widget_type_str == "NotificationWidget") {
+                var usedAdGroups = [];
+                var usedAds = [];
+                var loopNotifications = widget.loop_notifications;
+                var delayFirst = widget.delay_first_notification;
+                var display = widget.display_each_notification;
+                var space = widget.space_each_notification;
+                var total_ads = agResp.total_ads;
+                var adlist = agResp.adlist;
+                setFirst(
+                    delayFirst,
+                    display,
+                    space,
+                    loopNotifications,
+                    agResp,
+                    usedAdGroups,
+                    usedAds,
+                    total_ads,
+                    agResp.total_ads,
+                    adlist,
+                    data
+                );
+            }
+            // end processing resp
+        });
+    };
+};
+
+var AmpryBodyMarginValue;
+function setBodyMargin(value) {
+    if (value < 0) value = 0;
+    document.body.style["margin-top"] = value + "px";
+    elements = document.querySelectorAll('[data-fixed-content]')
+    if (value == 0) {
+        bodyMargin = false;
+        elements.forEach((element) => {
+            if (element.style.top)
+                element.style.top = "calc(" + element.style.top + " - " + AmpryBodyMarginValue + "px)"
+        });
+    }
+    else {
+        bodyMargin = true;
+        AmpryBodyMarginValue = value;
+        elements.forEach((element) => {
+            if (element.style.top)
+                element.style.top = "calc(" + element.style.top + " + " + value + "px)"
+            else element.style.top = value + "px"
+        });
+    }
+}
+function clearWidgetlyIframes() {
+    if (bodyMargin) setBodyMargin(0);
+    if (spaceTimeout) clearTimeout(spaceTimeout);
+    if (randomAdHTTP && randomAdHTTP.readyState != 4) randomAdHTTP.abort();
+    let widgetlyIframes = document.querySelectorAll("iframe.widgetlyIframe");
+    if (widgetlyIframes.length > 0) {
+        widgetlyIframes.forEach((element) => {
+            element.parentNode.removeChild(element);
+        });
+    }
+}
+
+function adjustIds() {
+    let htmlElements = document.querySelectorAll(".widgetlyOnPageSnippet");
+    let elements = {};
+    for (let i = 0; i < htmlElements.length; i++) {
+        if (
+            htmlElements[i]["id"] &&
+            htmlElements[i]["id"].indexOf("widgetlyOP") > -1
+        ) {
+            if (elements[htmlElements[i]["id"]])
+                elements[htmlElements[i]["id"]] += 1;
+            else elements[htmlElements[i]["id"]] = 1;
+        }
+    }
+    for (let key in elements) {
+        if (elements[key] > 1) {
+            for (let i = 1; i <= elements[key]; i++) {
+                let htmlElement = document.querySelector("#" + key);
+                htmlElement.setAttribute("id", key + "-" + i);
+            }
+        }
+    }
+}
+
+// (function () {
+//     widgetly.init();
+//     widgetly.getWidgets()
+// })();
+if (document.readyState === "complete") {
+    // The page is fully loaded
+    widgetly.init();
+    widgetly.getWidgets();
+} else {
+    window.onload = (event) => {
+        widgetly.init();
+        widgetly.getWidgets();
+    };
+}
+
+function parse_url_params(query) {
+    var vars = query.split("&");
+    var query_string = {};
+    for (var i = 0; i < vars.length; i++) {
+        var pair = vars[i].split("=");
+        var key = decodeURIComponent(pair[0]);
+        var value = decodeURIComponent(pair[1]);
+        // If first entry with this name
+        if (typeof query_string[key] === "undefined") {
+            query_string[key] = decodeURIComponent(value);
+            // If second entry with this name
+        } else if (typeof query_string[key] === "string") {
+            var arr = [query_string[key], decodeURIComponent(value)];
+            query_string[key] = arr;
+            // If third or later entry with this name
+        } else {
+            query_string[key].push(decodeURIComponent(value));
+        }
+    }
+    return query_string;
+}
+
+function setIframe(iframe, hideAfterLoad) {
+    iframe.contentWindow.postMessage(
+        {
+            msg: "iframeWidthHeight",
+            hideAfterLoad: hideAfterLoad,
+            iframeID: iframe.id,
+        },
+        "*"
+    );
+}
+
+function setIframeWH(iframe) {
+    iframe.contentWindow.postMessage(
+        { msg: "iframeWidthHeightWH", iframeID: iframe.id },
+        "*"
+    );
+}
+
+function sendIframeId(iframe, marginResize) {
+    if (marginResize) {
+        iframe.contentWindow.postMessage(
+            { msg: "sendIframeID", iframeID: iframe.id, marginResize: true },
+            "*"
+        );
+    } else {
+        iframe.contentWindow.postMessage(
+            { msg: "sendIframeID", iframeID: iframe.id },
+            "*"
+        );
+    }
+}
+
+function sendIframeIdBoth(iframe) {
+    iframe.contentWindow.postMessage(
+        { msg: "sendIframeIDBoth", iframeID: iframe.id },
+        "*"
+    );
+}
+
+// GET EXTERNAL CALL ARGS
+function getPixelParams(param) {
+    var scripts = document.getElementsByTagName("script");
+    for (var i = 0, l = scripts.length; i < l; i++) {
+        if (
+            (scripts[i].src.includes("track.js") ||
+                scripts[i].src.includes("track-update.js")) &&
+            (scripts[i].src.includes("ampry") ||
+                scripts[i].src.includes("widgetly"))
+        ) {
+            return new URL(scripts[i].getAttribute("src")).searchParams.get(
+                param
+            );
+        }
+    }
+}
+
+// MAIN WIDGETLY CSS
+function addWidgetlyCss(document) {
+    var link = document.createElement("link");
+    link.href =
+        "https://s3.amazonaws.com/widgetlystatic/static/widgetly.css?nocache=101";
+    // link.href = "http://localhost:8000/static/widgetly.css"
+    // link.href = staticUrl + "/static/widgetly.css?nocache=" + Math.random();
+    link.type = "text/css";
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+}
+
+// ANIMATION CSS
+function addAnimationCss(document) {
+    var link = document.createElement("link");
+    link.href =
+        "https://s3.amazonaws.com/widgetlystatic/static/animations125.css?nocache=101";
+    // link.href = "http://localhost:8000/static/widgetly.css"
+    // link.href = staticUrl + "/static/animations125.css";
+    link.type = "text/css";
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+}
+
+//////////////////////////////////////////////////////////////////
+///////////// TEASER v1.1 ////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+var ampryTeaser = {
+    teaser: null,
+    config: {},
+    show: function() {
+        if (this.teaser) {
+            this.teaser.style.visibility = ""
+            this.teaser.style.display = ""
+        }
+    },
+    hide: function() {
+        if (this.teaser) {
+            this.teaser.style.visibility = "hidden"
+            this.teaser.style.display = "none"
+        }
+    },
+    render: function (config) {
+        if (config) this.config = config;
+        if (!config) return;
+
+        this.init();
+
+        this.setPosition(this.teaser.style);
+        
+        document.body.appendChild(this.teaser);
+        
+        this.setStyle(this.teaser.style);
+
+        this.teaser.addEventListener("click", ampryLoadPopupAndDisplay);
+    },
+    init: function () {
+        this.teaser = document.createElement("div");
+        this.teaser.style = this.config.font_style;
+        this.teaser.style.boxSizing = "border-box";
+
+        this.teaser.style.position = "fixed"
+        this.teaser.style.cursor = "pointer";
+        this.teaser.style.padding = this.config.padding;
+        this.teaser.style.margin = this.config.margin;
+        this.teaser.style.borderRadius = this.config.border_radius;
+        this.teaser.style.backgroundColor = this.config.bg_color;
+        this.teaser.style.width = this.config.width;
+        this.teaser.style.height = this.config.height;
+        this.teaser.style.fontFamily = this.config.font_family;
+        this.teaser.style.fontSize = this.config.text_size;
+        this.teaser.style.color = this.config.text_color;
+        this.teaser.style.textAlign = this.config.text_align;
+        this.teaser.innerHTML = this.config.text;
+        this.teaser.style.visibility = "hidden"
+        
+        this.initFonts();
+    },
+    initFonts: function() {
+        if (this.config.font_family) {
+            fontEl = document.createElement("link")
+            fontEl.type = 'text/css';
+            fontEl.rel = 'stylesheet';
+            fontEl.href = apiHostName+'/media-library/font/load/'+this.config.font_family;
+            document.head.appendChild(fontEl);
+        }
+    },
+    setStyle: function (style) {
+        if (this.config.style == "rounded" 
+            && this.config.position != "left"
+            && this.config.position != "right") {
+            style.padding = "1em";
+            style.margin = "";
+            style.borderRadius = "";
+            style.minHeight = style.minWidth = "100px"
+            style.width = "10em"
+            style.height = "10em"
+            if (position.search("top") !== -1) {
+                style.borderBottomLeftRadius = "50%";
+                style.borderBottomRightRadius = "50%";
+                style.top = "-6em";
+                this.teaser.innerHTML = "<p style='margin-top:5.5em'>"+this.config.text+"</p>";
+            } else {
+                style.padding = "1.4em";
+                style.borderTopLeftRadius = "50%";
+                style.borderTopRightRadius = "50%";
+                style.bottom = "-6em";
+            }
+        } else if (this.config.style == "corner") {
+            style.padding = "1em 5em";
+            style.margin = "";
+            style.borderRadius = "";
+            style.minHeight = "60px"
+            style.minWidth = "200px"
+            style.width = "18em"
+            style.height = "7em"
+            if (this.config.position == "bottom-left") {
+                style.transform = "rotate(45deg)"
+                style.bottom = "-1em"
+                style.left = "-6.6em"
+            }
+            else if (this.config.position == "bottom-right") {
+                style.transform = "rotate(-45deg)"
+                style.bottom = "-1em"
+                style.right = "-6.6em"
+            }
+            else if (this.config.position == "top-right") {
+                style.transform = "rotate(45deg)"
+                style.top = "-1em"
+                style.right = "-6.6em"
+                this.teaser.innerHTML = "<p style='margin-top:2.4em'>"+this.config.text+"</p>";
+            }
+            else if (this.config.position == "top-left") {
+                style.transform = "rotate(-45deg)"
+                style.top = "-1em"
+                style.left = "-6.6em"
+                this.teaser.innerHTML = "<p style='margin-top:2.4em'>"+this.config.text+"</p>";
+            }
+        }
+        if (this.config.show_before) {
+            style.visibility = ""
+        }
+    },
+    setPosition: function (style) {
+        position = this.config.position;
+        if (position.search("top") !== -1) {
+            style.top = "0px";
+        } else if (position.search("bottom") !== -1) {
+            style.bottom = "0px";
+        } else {
+            style.top = "45%"
+        }
+        if (position.search("left") !== -1) {
+            style.left = "0px";
+            if (position.search("top") == -1 && position.search("bottom") == -1) {
+                style.transform = "rotate(-90deg)"
+                style.left = "-30px";
+            }
+        } else if (position.search("right") !== -1) {
+            style.right = "0px";
+            if (position.search("top") == -1 && position.search("bottom") == -1) {
+                style.transform = "rotate(-90deg)"
+                style.right = "-30px";
+            }
+        } else {
+            if (this.config.style == "full-width") {
+                style.borderRadius = "";
+                style.left = "0px"
+                style.width = "100%"
+            }
+            else style.left = "45%"
+        }
+    }
+}
+//////////////////////////////////////////////////////////////////////////
+//  PREVIEW MODE  ////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+// window.addEventListener('DOMContentLoaded', (event) => {
+//     let body = document.getElementsByTagName('body')[0]
+//     if (body && body.getAttribute('data-teaser')) {
+//         let dataTeaser;
+//         try {
+//             dataTeaser = JSON.parse(body.getAttribute('data-teaser'))
+//         }
+//         catch (err) { }
+//         if (dataTeaser)
+//             ampryTeaser.render(dataTeaser)
+//     }
+// })
+//////////////////////////////////////////////////////////////////////////
+
+function widgetlyHideMobileDesktop(mainEl, hideMobile, hideDesktop) {
+    if (hideMobile) {
+        mainEl.classList.add("widgetlyHideMobile");
+    }
+    if (hideDesktop) {
+        mainEl.classList.add("widgetlyHideDesktop");
+    }
+}
+
+// ON-PAGE WIDGET SETTINGS
+function widgetlyOnPageWidget(ad, iframeSrc) {
+    var adIframe = document.createElement("iframe");
+    adIframe.classList.add("widgetlyIframe");
+    adIframe.src = iframeSrc;
+    return adIframe;
+}
+
+// WIDGETLY CLOSE
+function adjustWidgetlyClose(iframe, closable, close_for_good, widgetTypeId) {
+    iframe.contentWindow.postMessage(
+        {
+            msg: "widgetlyClose",
+            closable: closable,
+            iframeID: iframe.id,
+            close_for_good: close_for_good,
+            widgetTypeId: widgetTypeId,
+        },
+        "*"
+    );
+}
+
+//HIDE DESKTOP/MOBILE
+function widgetlyHidePlatform(iframe, hideDesktop, hideMobile) {
+    if (hideDesktop) iframe.classList.add("widgetlyHideDesktop");
+    if (hideMobile) iframe.classList.add("widgetlyHideMobile");
+}
+
+// NOTIFICATION WIDGET ROTATION
+
+function setFirst(
+    delayFirst,
+    display,
+    space,
+    loopNotifications,
+    agResp,
+    usedAdGroups,
+    usedAds,
+    total_ads,
+    cycles,
+    adlist,
+    data
+) {
+    delayTimeout = setTimeout(function () {
+        clearTimeout(delayTimeout);
+        getNextNotificationAd(
+            agResp,
+            usedAdGroups,
+            usedAds,
+            total_ads,
+            display,
+            space,
+            loopNotifications,
+            cycles,
+            adlist,
+            data
+        );
+        // displayNotification(delayFirst, display, space, loopNotifications, 0, items, iframe)
+    }, delayFirst * 1000);
+}
+
+function isInArray(value, arr) {
+    return arr.indexOf(value) > -1;
+}
+
+function appendToArr(val, arr) {
+    if (!isInArray(val, arr)) {
+        arr.push(val);
+    }
+    return arr;
+}
+
+function removeElement(elementId) {
+    var element = document.getElementById(elementId);
+    element.parentNode.removeChild(element);
+}
+
+//  load notification from local array
+function loadNotificationAd(
+    agResp,
+    usedAdGroups,
+    usedAds,
+    total_ads,
+    display,
+    space,
+    loopNotifications,
+    cycles,
+    adlist,
+    forward_data
+) {
+    widgetTypeId = agResp.adWidgetProperties.widget_type.id;
+    close_for_good = agResp.adWidgetProperties.widget_type.close_for_good;
+    notificationAnimationName = agResp.adWidgetProperties.widget_type.animation;
+    canClose =
+        agResp.adWidgetProperties.widget_type.users_can_close_notifications;
+    canCloseForGood = agResp.adWidgetProperties.widget_type.close_for_good;
+    if (canCloseForGood) {
+        canClose = true;
+    }
+    if (
+        close_for_good &&
+        sessionStorage.getItem("close_for_good_" + widgetTypeId)
+    ) {
+        return;
+    }
+    if (total_ads == 0) {
+        total_ads = cycles;
+    }
+    selected_ad = adlist[total_ads - 1].id;
+    usedAds = appendToArr(selected_ad, usedAds);
+    var adIframe = document.createElement("iframe");
+    adIframe.id = "widgetlyIframe-" + agResp.adWidgetProperties.id;
+    adIframe.classList.add("widgetlyIframe", "widgetlyNotificationWidget");
+    adIframe.classList.add("mainIframe");
+
+    adContentUrl =
+        apiHostName +
+        "/placements/spawn?ad=" +
+        selected_ad +
+        "&referrer_front=" +
+        window.btoa(window.location.href);
+    adIframe.src = adContentUrl;
+
+    adIframe.onmouseenter = function () {
+        if (!loopNotifications && total_ads_new == 0) {
+            clearTimeout(displayLastTimeout);
+        } else {
+            clearTimeout(displayTimeout);
+        }
+    };
+    adIframe.onmouseleave = function () {
+        if (!loopNotifications && total_ads_new == 0) {
+            displayLastTimeout = setTimeout(function () {
+                removeNotificationIframe(adIframe);
+                clearTimeout(displayLastTimeout);
+            }, display * 1000);
+        } else {
+            displayTimeout = setTimeout(function () {
+                queueNextNotification(
+                    adIframe,
+                    agResp,
+                    usedAdGroups,
+                    usedAds,
+                    total_ads_new,
+                    display,
+                    space,
+                    loopNotifications,
+                    cycles,
+                    adlist,
+                    forward_data
+                );
+            }, display * 1000);
+        }
+    };
+    adIframe.onload = function () {
+        total_ads_new = total_ads - 1;
+        if (loopNotifications && widgetlyNotLoopCount < 3 * cycles) {
+            widgetlyNotLoopCount += 1;
+            displayTimeout = setTimeout(function () {
+                queueNextNotification(
+                    adIframe,
+                    agResp,
+                    usedAdGroups,
+                    usedAds,
+                    total_ads_new,
+                    display,
+                    space,
+                    loopNotifications,
+                    cycles,
+                    adlist,
+                    forward_data
+                );
+            }, display * 1000);
+        } else if (!loopNotifications && total_ads_new > 0) {
+            displayTimeout = setTimeout(function () {
+                queueNextNotification(
+                    adIframe,
+                    agResp,
+                    usedAdGroups,
+                    usedAds,
+                    total_ads_new,
+                    display,
+                    space,
+                    loopNotifications,
+                    cycles,
+                    adlist,
+                    forward_data
+                );
+            }, display * 1000);
+        }
+        if (!loopNotifications && total_ads_new == 0) {
+            displayLastTimeout = setTimeout(function () {
+                removeNotificationIframe(adIframe);
+                clearTimeout(displayLastTimeout);
+            }, display * 1000);
+        }
+
+        adIframe.classList.remove("hidden");
+        sendIframeIdBoth(adIframe, true);
+        setIframe(adIframe);
+        adIframe.contentWindow.postMessage(
+            { msg: "notificationWidggetSettings" },
+            "*"
+        );
+        adjustWidgetlyClose(adIframe, canClose, canCloseForGood, widgetTypeId);
+        var widgetHideMobile = false;
+        var widgetHideDesktop = false;
+        if (
+            agResp.adGroupPlatform == "none" ||
+            agResp.adGroupPlatform == "desktop"
+        ) {
+            widgetHideMobile = true;
+        }
+        if (
+            agResp.adGroupPlatform == "none" ||
+            agResp.adGroupPlatform == "mobile"
+        ) {
+            widgetHideDesktop = true;
+        }
+        widgetlyHidePlatform(adIframe, widgetHideDesktop, widgetHideMobile);
+    };
+    adIframe.classList.add(
+        agResp.adWidgetProperties.widget_type.desktop_position
+    );
+    adIframe.classList.add(
+        agResp.adWidgetProperties.widget_type.mobile_position
+    );
+    adIframe.classList.add("animateNotificationWidget");
+    adIframe.classList.add("hidden");
+    adIframe.classList.add(notificationAnimationName + "In");
+    addNotificationIframe(adIframe);
+}
+
+//  initialize next notification
+function getNextNotificationAd(
+    agResp,
+    usedAdGroups,
+    usedAds,
+    total_ads,
+    display,
+    space,
+    loopNotifications,
+    cycles,
+    adlist,
+    forward_data
+) {
+    return loadNotificationAd(
+        agResp,
+        usedAdGroups,
+        usedAds,
+        total_ads,
+        display,
+        space,
+        loopNotifications,
+        cycles,
+        adlist,
+        forward_data
+    );
+}
+
+function queueNextNotification(
+    adIframe,
+    agResp,
+    usedAdGroups,
+    usedAds,
+    total_ads_new,
+    display,
+    space,
+    loopNotifications,
+    cycles,
+    adlist,
+    forward_data
+) {
+    removeNotificationIframe(adIframe);
+    clearTimeout(displayTimeout);
+    if (widgetlyNotLoopCount < 3 * cycles) {
+        spaceTimeout = setTimeout(function () {
+            clearTimeout(spaceTimeout);
+            getNextNotificationAd(
+                agResp,
+                usedAdGroups,
+                usedAds,
+                total_ads_new,
+                display,
+                space,
+                loopNotifications,
+                cycles,
+                adlist,
+                forward_data
+            );
+        }, space * 1000);
+    }
+}
+
+// Add notification Iframe
+function addNotificationIframe(adIframe) {
+    if (!notificationIframe) {
+        document.body.appendChild(adIframe);
+        notificationIframe = true;
+    } else
+        setTimeout(function () {
+            document.body.appendChild(adIframe);
+            notificationIframe = true;
+        }, 1000);
+}
+// Remove notification Iframe after animation
+function removeNotificationIframe(adIframe) {
+    adIframe.classList.remove(notificationAnimationName + "In");
+    adIframe.classList.add(notificationAnimationName + "Out");
+    setTimeout(function () {
+        notificationIframe = false;
+        adIframe.parentNode.removeChild(adIframe);
+    }, 1000);
+}
+// POPUP ( Exit Intent Trigger )
+
+function addEvent(obj, evt, fn) {
+    if (obj.addEventListener) {
+        obj.addEventListener(evt, fn, false);
+    } else if (obj.attachEvent) {
+        obj.attachEvent("on" + evt, fn);
+    }
+}
+
+// POPUP ( Page Scroll Trigger )
+function currentScrollPercentage() {
+    var doc = document.documentElement;
+    var scrollTop =
+        (window.pageYOffset || doc.scrollTop) - (doc.clientTop || 0);
+    var docHeight = document.documentElement.scrollHeight;
+    var winHeight = window.innerHeight;
+    var scrollPercent = scrollTop / (docHeight - winHeight);
+    return Math.round(scrollPercent * 100);
+}
+
+function isNumber(n) {
+    return !isNaN(parseFloat(n)) && !isNaN(n - 0);
+}
+
+function canIShow(
+    frequencyType,
+    frequencyDays,
+    frequencyTimes,
+    iframeID,
+    widgetType,
+    close_for_session
+) {
+    if (close_for_session) {
+        if (sessionStorage.getItem("showncfs" + iframeID)) {
+            return false;
+        }
+    }
+    if (frequencyType == "everytime") {
+        return true;
+    } else if (widgetType == "OnPageWidget" && onPageFilterPassed) {
+        return true;
+    } else if (!frequencyType || frequencyType == "reload") {
+        if (scrollTriggers.includes("shown" + iframeID)) {
+            return false;
+        } else {
+            scrollTriggers.push("shown" + iframeID);
+        }
+    } else if (frequencyType == "persession") {
+        if (sessionStorage.getItem("shown" + iframeID)) {
+            return false;
+        } else {
+            sessionStorage.setItem("shown" + iframeID, "true");
+        }
+    } else if (frequencyType == "forever") {
+        if (localStorage.getItem("shown" + iframeID)) {
+            return false;
+        } else {
+            localStorage.setItem("shown" + iframeID, "true");
+        }
+    } else if (frequencyType == "days" && isNumber(frequencyDays)) {
+        if (getCookie("shown" + iframeID + "d")) {
+            return false;
+        } else {
+            times = parseFloat(frequencyTimes);
+            timesShown = localStorage.getItem("shown" + iframeID + "t");
+            if (timesShown && timesShown == times) {
+                freq = parseFloat(frequencyDays);
+                setCookie("shown" + iframeID + "d", "true", freq);
+                localStorage.setItem("shown" + iframeID + "t", 0);
+                return false;
+            } else {
+                if (!timesShown) timesShown = 0;
+                timesShown++;
+                localStorage.setItem("shown" + iframeID + "t", timesShown);
+            }
+        }
+    }
+    return true;
+}
+
+// process frequency and display iframe
+function popupShowOnTrigger() {
+    if (
+        pop_delay_active &&
+        canIShow(
+            popFrequency,
+            popFrequencyDays,
+            popFrequencyTimes,
+            popIframe.id,
+            "PopUpWidget",
+            popClose_for_session
+        )
+    ) {
+        ampryLoadPopupAndDisplay();
+
+        if ("auto_close" in pops.advanced_display
+            && pops.advanced_display.auto_close) {
+            setTimeout(ampryClosePopup, pops.advanced_display.auto_close * 1000)
+        }
+    }
+}
+
+function ampryLoadPopupAndDisplay() {
+    if (popIframe.src != popUpSrc) {
+        popIframe.src = popUpSrc;
+    }
+    pops = placementsCache[popIframe.id];
+    if ("disable_page_scroll" in pops.advanced_display
+        && pops.advanced_display.disable_page_scroll) {
+        document.getElementsByTagName("html")[0].style.overflow = "hidden";
+        document.getElementsByTagName("body")[0].style.overflow = "hidden";
+    }
+    if (!document.getElementById(popIframe.id)) {
+        document.body.appendChild(popIframe)
+    }
+    popIframe.style = "display:block";
+    ampryTeaser.hide();
+}
+
+function ampryClosePopup() {
+    widget = placementsCache[popIframe.id];
+    if ("disable_page_scroll" in widget.advanced_display
+        && widget.advanced_display.disable_page_scroll) {
+        let htmlbody = document.getElementsByTagName("html")[0];
+        if (htmlbody.style.overflow == "hidden")
+            htmlbody.style.overflow = "auto";
+        let body = document.getElementsByTagName("body")[0];
+        if (body.style.overflow == "hidden")
+            body.style.overflow = "auto";
+    }
+    popIframe.style.display = "none";
+}
+
+function popupClickTrigger() {
+    popClickTrack++;
+    if (popClickTrack == popClickTarget) {
+        popupShowOnTrigger();
+    }
+}
+
+function widgetlyPageScrollTrigger(widget, iframe) {
+    if (!("trigger_type" in widget)) {
+        return;
+    }
+    scrolledPct = widget.trigger_type.user_scrolled_down;
+    if (scrolledPct == 100) {
+        scrolledPct = 95;
+    }
+
+    setTimeout(function () {
+        if (currentScrollPercentage() > scrolledPct) {
+            popupShowOnTrigger();
+        }
+    }, 500);
+}
+
+function widgetlyTBScrollTrigger(widget, iframe) {
+    scrolledPct = parseInt(widget.trigger_type);
+    if (scrolledPct == 100) {
+        scrolledPct = 95;
+    }
+    setTimeout(function () {
+        if (currentScrollPercentage() > scrolledPct) {
+            // document.getElementsByTagName('body')[0].style.overflow='hidden'
+            document.body.appendChild(iframe);
+            widgetlyTBScroll = true;
+        }
+    }, 500);
+}
+
+function widgetlyMobileExitIntentScrollTrigger(scrolledPct) {
+    if (scrolledPct == 100) {
+        scrolledPct = 95;
+    }
+    setTimeout(function () {
+        if (
+            wMEIST === true &&
+            scrolledPastHalf === true &&
+            currentScrollPercentage() < scrolledPct + 3
+        ) {
+            popupShowOnTrigger();
+            // wMEIST = false;
+        }
+        if (currentScrollPercentage() > 50) {
+            scrolledPastHalf = true;
+        }
+    }, 500);
+}
+
+// POPUP ( Idle User Trigger)
+function widgetyIdleUserTrigger(seconds) {
+    document.addEventListener(
+        "mousemove",
+        function () {
+            widgetlyUIdleresetTimer(seconds);
+        },
+        false
+    );
+    widgetlyUIdlestartTimer(seconds);
+}
+function widgetlyUIdlestartTimer(seconds) {
+    afterIdleSeconds = seconds;
+    timeoutID = window.setTimeout(function () {
+        widgetlyUIdlegoInactive(seconds);
+    }, seconds * 1000);
+}
+function widgetlyUIdleresetTimer(seconds) {
+    idleUser = false;
+    window.clearTimeout(timeoutID);
+    widgetlyUIdlegoActive(seconds);
+}
+function widgetlyUIdlegoInactive(seconds) {
+    if (!idleUser) {
+        // iframe = document.getElementById('widgetlyIframe')
+        iframe = document.getElementsByClassName("popUpIframe")[0];
+        popupShowOnTrigger();
+        idleUser = true;
+    }
+}
+function widgetlyUIdlegoActive(seconds) {
+    widgetlyUIdlestartTimer(seconds);
+}
+
+// postMessage event handler ( iframe modifications)
+var eventMethod = window.addEventListener ? "addEventListener" : "attachEvent";
+var eventer = window[eventMethod];
+var messageEvent = eventMethod == "attachEvent" ? "onmessage" : "message";
+eventer(
+    messageEvent,
+    function (e) {
+        if (e.origin == apiHostName) {
+            if (!e.data) return;
+            iframe = document.getElementById(e.data["iframeID"]);
+            widget = placementsCache[e.data["iframeID"]];
+            wCloseSession = placementsCloseSession[e.data["iframeID"]];
+            if (e.data["msg"] == "iframeWidthHeight") {
+                let newWidth = e.data["width"];
+                let newHeight = e.data["height"];
+                if (e.data["widgetWidth"]) {
+                    let widgetWidth = parseInt(e.data["widgetWidth"]);
+                    if (newWidth < widgetWidth) {
+                        if (window.innerWidth > widgetWidth)
+                            newWidth = widgetWidth;
+                        else newWidth = window.innerWidth;
+                    }
+                }
+                iframe.style.width = newWidth + 1 + "px";
+                iframe.style.height = newHeight;
+            } else if (e.data["msg"] == "iframeWidthHeightWH") {
+                iframe.style.height = e.data["height"];
+            } else if (e.data["msg"] == "iframeDisplayNone") {
+                if ("advanced_display" in widget &&
+                    "disable_page_scroll" in widget.advanced_display
+                    && widget.advanced_display.disable_page_scroll) {
+                    let htmlbody = document.getElementsByTagName("html")[0];
+                    if (htmlbody.style.overflow == "hidden")
+                        htmlbody.style.overflow = "auto";
+                    let body = document.getElementsByTagName("body")[0];
+                    if (body.style.overflow == "hidden")
+                        body.style.overflow = "auto";
+                }
+                // iframe.style.display = "none";
+                if ('teaser_config' in widget && widget.teaser_config && widget.teaser_config.show_close) {
+                    ampryTeaser.show()
+                }
+                iframe.remove();
+                if (wCloseSession) {
+                    sessionStorage.setItem("showncfs" + e.data["iframeID"], "true");
+                }
+                if (widget.display_bar_at == "widgetlyTop") {
+                    setBodyMargin(0);
+                }
+                if (e.data["widgetTypeId"]) {
+                    sessionStorage.setItem(
+                        "close_for_good_" + widgetTypeId,
+                        "true"
+                    );
+                }
+            } else if (e.data["msg"] == "iframeDisplayBlock") {
+                if ("disable_page_scroll" in widget.advanced_display
+                    && widget.advanced_display.disable_page_scroll) {
+                    document.getElementsByTagName("html")[0].style.overflow =
+                        "hidden";
+                    document.getElementsByTagName("body")[0].style.overflow =
+                        "hidden";
+                }
+                iframe.style.display = "block";
+            } else if (e.data["msg"] == "iframeNotificationWidthHeight") {
+                iframe.style.height = e.data["height"] + 1 + "px";
+                iframe.style.width = e.data["width"] + 1 + "px";
+            } else if (e.data["msg"] == "iframeNotificationHeightZero") {
+                iframe.style.height = 0;
+            } else if (e.data["msg"] == "pushPageTB") {
+                if (iframe.style && iframe.style.display == "none")
+                    setBodyMargin(0);
+                else setBodyMargin(e.data["height"] - 1);
+            }
+            if (e.data["hideAfterLoad"]) iframe.style.display = "none";
+        }
+    },
+    false
+);
+
+function getCookie(cname) {
+    var name = cname + "=";
+    var decodedCookie = decodeURIComponent(document.cookie);
+    var ca = decodedCookie.split(";");
+    for (var i = 0; i < ca.length; i++) {
+        var c = ca[i];
+        while (c.charAt(0) == " ") {
+            c = c.substring(1);
+        }
+        if (c.indexOf(name) == 0) {
+            return c.substring(name.length, c.length);
+        }
+    }
+    return "";
+}
+
+function setCookie(cname, cvalue, exdays) {
+    var d = new Date();
+    d.setTime(d.getTime() + exdays * 24 * 60 * 60 * 1000);
+    var expires = "expires=" + d.toUTCString();
+    document.cookie =
+        cname + "=" + cvalue + ";" + expires + ";path=/; SameSite=None; Secure";
+}
+
+function ampryIsMobile() {
+    a = navigator.userAgent || navigator.vendor || window.opera;
+    if (
+        /(android|bb\d+|meego).+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i.test(
+            a
+        ) ||
+        /1207|6310|6590|3gso|4thp|50[1-6]i|770s|802s|a wa|abac|ac(er|oo|s\-)|ai(ko|rn)|al(av|ca|co)|amoi|an(ex|ny|yw)|aptu|ar(ch|go)|as(te|us)|attw|au(di|\-m|r |s )|avan|be(ck|ll|nq)|bi(lb|rd)|bl(ac|az)|br(e|v)w|bumb|bw\-(n|u)|c55\/|capi|ccwa|cdm\-|cell|chtm|cldc|cmd\-|co(mp|nd)|craw|da(it|ll|ng)|dbte|dc\-s|devi|dica|dmob|do(c|p)o|ds(12|\-d)|el(49|ai)|em(l2|ul)|er(ic|k0)|esl8|ez([4-7]0|os|wa|ze)|fetc|fly(\-|_)|g1 u|g560|gene|gf\-5|g\-mo|go(\.w|od)|gr(ad|un)|haie|hcit|hd\-(m|p|t)|hei\-|hi(pt|ta)|hp( i|ip)|hs\-c|ht(c(\-| |_|a|g|p|s|t)|tp)|hu(aw|tc)|i\-(20|go|ma)|i230|iac( |\-|\/)|ibro|idea|ig01|ikom|im1k|inno|ipaq|iris|ja(t|v)a|jbro|jemu|jigs|kddi|keji|kgt( |\/)|klon|kpt |kwc\-|kyo(c|k)|le(no|xi)|lg( g|\/(k|l|u)|50|54|\-[a-w])|libw|lynx|m1\-w|m3ga|m50\/|ma(te|ui|xo)|mc(01|21|ca)|m\-cr|me(rc|ri)|mi(o8|oa|ts)|mmef|mo(01|02|bi|de|do|t(\-| |o|v)|zz)|mt(50|p1|v )|mwbp|mywa|n10[0-2]|n20[2-3]|n30(0|2)|n50(0|2|5)|n7(0(0|1)|10)|ne((c|m)\-|on|tf|wf|wg|wt)|nok(6|i)|nzph|o2im|op(ti|wv)|oran|owg1|p800|pan(a|d|t)|pdxg|pg(13|\-([1-8]|c))|phil|pire|pl(ay|uc)|pn\-2|po(ck|rt|se)|prox|psio|pt\-g|qa\-a|qc(07|12|21|32|60|\-[2-7]|i\-)|qtek|r380|r600|raks|rim9|ro(ve|zo)|s55\/|sa(ge|ma|mm|ms|ny|va)|sc(01|h\-|oo|p\-)|sdk\/|se(c(\-|0|1)|47|mc|nd|ri)|sgh\-|shar|sie(\-|m)|sk\-0|sl(45|id)|sm(al|ar|b3|it|t5)|so(ft|ny)|sp(01|h\-|v\-|v )|sy(01|mb)|t2(18|50)|t6(00|10|18)|ta(gt|lk)|tcl\-|tdg\-|tel(i|m)|tim\-|t\-mo|to(pl|sh)|ts(70|m\-|m3|m5)|tx\-9|up(\.b|g1|si)|utst|v400|v750|veri|vi(rg|te)|vk(40|5[0-3]|\-v)|vm40|voda|vulc|vx(52|53|60|61|70|80|81|83|85|98)|w3c(\-| )|webc|whit|wi(g |nc|nw)|wmlb|wonu|x700|yas\-|your|zeto|zte\-/i.test(
+            a.substr(0, 4)
+        )
+    ) {
+        return true;
+    }
+    return false;
+}
+function ampryIsMobileOrTablet() {
+    var check = false;
+    (function (a) {
+        if (
+            /(android|bb\d+|meego).+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino|android|ipad|playbook|silk/i.test(
+                a
+            ) ||
+            /1207|6310|6590|3gso|4thp|50[1-6]i|770s|802s|a wa|abac|ac(er|oo|s\-)|ai(ko|rn)|al(av|ca|co)|amoi|an(ex|ny|yw)|aptu|ar(ch|go)|as(te|us)|attw|au(di|\-m|r |s )|avan|be(ck|ll|nq)|bi(lb|rd)|bl(ac|az)|br(e|v)w|bumb|bw\-(n|u)|c55\/|capi|ccwa|cdm\-|cell|chtm|cldc|cmd\-|co(mp|nd)|craw|da(it|ll|ng)|dbte|dc\-s|devi|dica|dmob|do(c|p)o|ds(12|\-d)|el(49|ai)|em(l2|ul)|er(ic|k0)|esl8|ez([4-7]0|os|wa|ze)|fetc|fly(\-|_)|g1 u|g560|gene|gf\-5|g\-mo|go(\.w|od)|gr(ad|un)|haie|hcit|hd\-(m|p|t)|hei\-|hi(pt|ta)|hp( i|ip)|hs\-c|ht(c(\-| |_|a|g|p|s|t)|tp)|hu(aw|tc)|i\-(20|go|ma)|i230|iac( |\-|\/)|ibro|idea|ig01|ikom|im1k|inno|ipaq|iris|ja(t|v)a|jbro|jemu|jigs|kddi|keji|kgt( |\/)|klon|kpt |kwc\-|kyo(c|k)|le(no|xi)|lg( g|\/(k|l|u)|50|54|\-[a-w])|libw|lynx|m1\-w|m3ga|m50\/|ma(te|ui|xo)|mc(01|21|ca)|m\-cr|me(rc|ri)|mi(o8|oa|ts)|mmef|mo(01|02|bi|de|do|t(\-| |o|v)|zz)|mt(50|p1|v )|mwbp|mywa|n10[0-2]|n20[2-3]|n30(0|2)|n50(0|2|5)|n7(0(0|1)|10)|ne((c|m)\-|on|tf|wf|wg|wt)|nok(6|i)|nzph|o2im|op(ti|wv)|oran|owg1|p800|pan(a|d|t)|pdxg|pg(13|\-([1-8]|c))|phil|pire|pl(ay|uc)|pn\-2|po(ck|rt|se)|prox|psio|pt\-g|qa\-a|qc(07|12|21|32|60|\-[2-7]|i\-)|qtek|r380|r600|raks|rim9|ro(ve|zo)|s55\/|sa(ge|ma|mm|ms|ny|va)|sc(01|h\-|oo|p\-)|sdk\/|se(c(\-|0|1)|47|mc|nd|ri)|sgh\-|shar|sie(\-|m)|sk\-0|sl(45|id)|sm(al|ar|b3|it|t5)|so(ft|ny)|sp(01|h\-|v\-|v )|sy(01|mb)|t2(18|50)|t6(00|10|18)|ta(gt|lk)|tcl\-|tdg\-|tel(i|m)|tim\-|t\-mo|to(pl|sh)|ts(70|m\-|m3|m5)|tx\-9|up(\.b|g1|si)|utst|v400|v750|veri|vi(rg|te)|vk(40|5[0-3]|\-v)|vm40|voda|vulc|vx(52|53|60|61|70|80|81|83|85|98)|w3c(\-| )|webc|whit|wi(g |nc|nw)|wmlb|wonu|x700|yas\-|your|zeto|zte\-/i.test(
+                a.substr(0, 4)
+            )
+        )
+            check = true;
+    })(navigator.userAgent || navigator.vendor || window.opera);
+    return check;
+}
+function getPlatformType() {
+    if (ampryIsMobile()) {
+        return "mobile";
+    } else if (ampryIsMobileOrTablet()) {
+        return "tablet";
+    } else {
+        return "desktop";
+    }
+}
+
+function checkConversions() {
+    // Get Random Ad details
+    const GetAdHttp = new XMLHttpRequest();
+    const genUrl = apiHostName + "/placements/conversions/check/";
+    GetAdHttp.open("GET", genUrl, true);
+    GetAdHttp.withCredentials = true;
+    GetAdHttp.setRequestHeader("Content-Type", "application/json");
+    GetAdHttp.send();
+    GetAdHttp.onload = function () {
+        console.log(GetAdHttp.response);
+    };
+}

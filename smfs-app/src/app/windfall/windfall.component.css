@@ -1,0 +1,87 @@
+.content{
+  border-radius: 5px;
+  background: white;
+
+}
+
+
+
+img.center{
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  width: 95%;
+}
+
+h1.center{
+
+}
+
+.headline1{
+  display: inline-block;
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.text1{
+
+  width: 90%
+}
+
+.map{
+  width: 90%;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: 5em;
+  padding-left: 3em;
+}
+
+.button1{
+  background-color: #21ba45;
+  text-shadow: none;
+  min-height: 1em;
+  display: block;
+  width: 100%;
+  font-size: 1.71428571rem;
+  padding: 3% 0;
+  font-weight: 700;
+  line-height: 1em;
+  font-style: normal;
+  text-align: center;
+  border-radius: .28571429rem;
+  vertical-align: baseline;
+  outline: 0;
+  border: none;
+  cursor: pointer;
+  text-transform: none;
+  text-decoration: none;
+  user-select: none;
+  will-change: auto;
+  box-sizing: inherit;
+  transition: color .2s ease;
+}
+
+.button1-text{
+  margin-bottom: .05em;
+}
+
+.button1-container{
+  padding-bottom: 2em;
+  background: white;
+}
+
+.footer1{
+  background-color: #f1f2f6;
+  text-align: center;
+  padding-top: .75em;
+}
+
+.banner{
+  text-align: center;
+  background-color: rgb(37, 42, 59);
+  border-radius: 0 0 5px 5px;
+  margin-bottom: 2em;
+
+}
