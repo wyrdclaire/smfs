@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="94a06eac-e394-42b9-a37d-e740c95f8bbe" name="Default Changelist" comment="" />
+    <list default="true" id="94a06eac-e394-42b9-a37d-e740c95f8bbe" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/smfs-app/src/app/covid/covid.component.html" beforeDir="false" afterPath="$PROJECT_DIR$/smfs-app/src/app/covid/covid.component.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/smfs-app/src/app/windfall/windfall.component.html" beforeDir="false" afterPath="$PROJECT_DIR$/smfs-app/src/app/windfall/windfall.component.html" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -14,6 +19,9 @@
       </list>
     </option>
   </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
   <component name="ProjectId" id="1jy8AuJP0AFdLyV1NPl3BKNK7bV" />
   <component name="ProjectReloadState">
     <option name="STATE" value="1" />
@@ -23,7 +31,9 @@
     <option name="showLibraryContents" value="true" />
   </component>
   <component name="PropertiesComponent">
+    <property name="ASKED_SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
+    <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="javascript.nodejs.core.library.configured.version" value="14.15.0" />
     <property name="javascript.nodejs.core.library.typings.version" value="14.14.6" />
@@ -54,7 +64,8 @@
       <workItem from="1604764831443" duration="44410000" />
       <workItem from="1605193823860" duration="2891000" />
       <workItem from="1605197001594" duration="22877000" />
-      <workItem from="1605281225041" duration="14215000" />
+      <workItem from="1605281225041" duration="16156000" />
+      <workItem from="1605686723147" duration="1069000" />
     </task>
     <servers />
   </component>
@@ -86,9 +97,9 @@
       <screen x="0" y="0" width="1280" height="680" />
     </state>
     <state x="142" y="0" key="SettingsEditor/0.0.1280.680@0.0.1280.680" timestamp="1605197116934" />
-    <state x="0" y="0" width="587" height="680" key="find.popup" timestamp="1605052220688">
+    <state x="0" y="0" width="587" height="680" key="find.popup" timestamp="1605686974971">
       <screen x="0" y="0" width="1280" height="680" />
     </state>
-    <state x="0" y="0" width="587" height="680" key="find.popup/0.0.1280.680@0.0.1280.680" timestamp="1605052220688" />
+    <state x="0" y="0" width="587" height="680" key="find.popup/0.0.1280.680@0.0.1280.680" timestamp="1605686974971" />
   </component>
 </project>
